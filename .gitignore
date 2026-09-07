@@ -7,6 +7,14 @@ venv/
 .env
 .env.*
 
+# Local SQLite dev database (개발용, 시드로 재생성됨)
+*.db
+backend/stock_timing.db
+
+# Metro / Expo caches
+.expo/
+.metro-health-check*
+
 # Node / Expo
 node_modules/
 .expo/

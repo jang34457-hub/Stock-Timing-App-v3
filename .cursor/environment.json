@@ -1,0 +1,18 @@
+{
+  "name": "Stock Timing App",
+  "install": "bash scripts/cloud-agent-install.sh",
+  "terminals": [
+    {
+      "name": "backend (FastAPI :8000)",
+      "command": "cd backend && . .venv/bin/activate && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    },
+    {
+      "name": "frontend (Expo web :8081)",
+      "command": "cd frontend && npx expo start --web --port 8081"
+    }
+  ],
+  "ports": [
+    { "name": "backend api", "port": 8000 },
+    { "name": "expo web", "port": 8081 }
+  ]
+}
