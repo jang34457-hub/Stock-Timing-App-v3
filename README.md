@@ -26,6 +26,38 @@ Stock-Timing-App/
 └─ README.md
 ```
 
+## 로컬 개발 환경 실행
+
+의존성 설치(백엔드 가상환경 + 프론트엔드 패키지):
+
+```bash
+bash scripts/cloud-agent-install.sh
+```
+
+백엔드(FastAPI, 기본 SQLite + 샘플 시드) 실행:
+
+```bash
+cd backend && . .venv/bin/activate && uvicorn app.main:app --reload --port 8000
+# http://localhost:8000/docs 에서 API 확인, http://localhost:8000/top20 등
+```
+
+프론트엔드(Expo 웹) 실행:
+
+```bash
+cd frontend && npx expo start --web --port 8081
+# http://localhost:8081
+```
+
+백엔드 테스트:
+
+```bash
+cd backend && . .venv/bin/activate && pytest
+```
+
+> 로컬에서는 외부 자격증명 없이 SQLite 와 테스트 모드 SMS 로 동작합니다.
+> 운영 전환 시 `backend/.env.example` 을 참고해 Supabase(PostgreSQL)와 SMS API 를 주입하세요.
+> Supabase 스키마는 [`database/schema.sql`](database/schema.sql) 에 있습니다.
+
 ## 개발 원칙
 
 1. LLM에게 주가 계산을 시키지 않는다.
