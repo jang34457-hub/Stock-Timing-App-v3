@@ -25,6 +25,14 @@ Thumbs.db
 .idea/
 .vscode/
 
+# Local market cache
+backend/data/
+
 # Secrets
 *.pem
 credentials.json
+
+# Keep example env files
+!.env.example
+!backend/.env.example
+!frontend/.env.example

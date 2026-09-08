@@ -1,0 +1,9 @@
+finance-datareader>=0.9.202
+pandas>=2.2.0
+requests>=2.32.0
+fastapi>=0.115.0
+uvicorn>=0.32.0
+httpx>=0.27.0
+apscheduler>=3.10.0
+tzdata>=2024.1
+psycopg2-binary>=2.9.9

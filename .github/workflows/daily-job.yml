@@ -1,0 +1,56 @@
+name: Daily close job
+
+# KST 16:00 = UTC 07:00. 휴장·주말은 jobs.run_daily_job 이 건너뛴다.
+on:
+  schedule:
+    - cron: "0 7 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Run even on weekend/holiday
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  daily-pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      APP_ENV: production
+      JOB_RUNNER: external
+      TZ: Asia/Seoul
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      SMS_PROVIDER: ${{ secrets.SMS_PROVIDER }}
+      SOLAPI_API_KEY: ${{ secrets.SOLAPI_API_KEY }}
+      SOLAPI_API_SECRET: ${{ secrets.SOLAPI_API_SECRET }}
+      SOLAPI_SENDER: ${{ secrets.SOLAPI_SENDER }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -r backend/requirements.txt
+
+      - name: Require DATABASE_URL
+        run: |
+          if [ -z "$DATABASE_URL" ] && [ -z "$SUPABASE_DB_URL" ]; then
+            echo "Set repository secret DATABASE_URL (Supabase Postgres URI)."
+            exit 1
+          fi
+
+      - name: Run TOP20 / prices / MA3 / signals / SMS pipeline
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.force }}" = "true" ]; then
+            python scripts/run_daily_job.py --force
+          else
+            python scripts/run_daily_job.py
+          fi
