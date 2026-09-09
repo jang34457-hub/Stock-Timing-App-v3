@@ -12,6 +12,7 @@ from incremental import (
     PRICE_LOOKBACK_MONTHS,
     clear_listing_cache,
     fetch_missing_prices,
+    get_last_date,
     get_missing_dates,
     save_prices,
     update_ma3,
@@ -37,12 +38,69 @@ def last_run() -> dict | None:
     return _last_run
 
 
-def run_daily_job(as_of: date | None = None, *, force: bool = False) -> dict:
+def data_is_stale(session: date | None = None) -> bool:
+    """TOP20 시세가 최근 거래일보다 뒤처졌거나, 이번 주 선정이 없으면 True."""
+    end = session or latest_trading_day()
+    cached = load_latest_top20()
+    items = (cached or {}).get("items") or []
+    if len(items) < 20:
+        return True
+    if _as_date(cached.get("selection_date")) < first_trading_day_of_week(end):
+        return True
+    for item in items:
+        last = get_last_date(item["stock_code"])
+        if last is None or last < end:
+            return True
+    return False
+
+
+def catch_up_if_stale(*, wait: bool = True) -> dict:
+    """날짜가 바뀐 뒤 접속하면 빠진 장 마감 데이터를 이어서 채운다.
+
+    스케줄러가 16시에 못 돌았거나 서버가 꺼져 있어도, 최신 거래일까지 증분 업데이트한다.
+    """
+    session = latest_trading_day()
+    if not data_is_stale(session):
+        return {
+            "ok": True,
+            "job": "catch_up",
+            "status": "skipped",
+            "skipped": "up_to_date",
+            "session": session.isoformat(),
+        }
+    acquired = _lock.acquire(timeout=600) if wait else _lock.acquire(blocking=False)
+    if not acquired:
+        return {
+            "ok": False,
+            "job": "catch_up",
+            "status": "skipped",
+            "skipped": "already_running",
+            "session": session.isoformat(),
+        }
+    try:
+        session = latest_trading_day()
+        if not data_is_stale(session):
+            return {
+                "ok": True,
+                "job": "catch_up",
+                "status": "skipped",
+                "skipped": "up_to_date",
+                "session": session.isoformat(),
+            }
+        result = _run_daily_job(session, force=True)
+        result["job"] = "catch_up"
+        _store(result)
+        return result
+    finally:
+        _lock.release()
+
+
+def run_daily_job(as_of: date | None = None, *, force: bool = False, wait: bool = False) -> dict:
     """매일: 장 마감 → TOP20 확인 → 결측만 수집 → MA3 → 신호 → 관심종목 SMS.
 
     해당 주의 첫 거래일이면 TOP20을 다시 선정한다. 휴장·주말은 건너뛴다.
     """
-    if not _lock.acquire(blocking=False):
+    if not (_lock.acquire(timeout=600) if wait else _lock.acquire(blocking=False)):
         return {"ok": False, "job": "daily", "status": "skipped", "skipped": "already_running"}
     try:
         result = _run_daily_job(as_of, force=force)

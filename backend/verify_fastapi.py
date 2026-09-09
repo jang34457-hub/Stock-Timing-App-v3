@@ -12,6 +12,8 @@ import pandas as pd
 from fastapi.testclient import TestClient
 
 os.environ.setdefault("SCHEDULER_ENABLED", "0")
+os.environ["CATCHUP_ON_START"] = "0"
+os.environ["CATCHUP_ON_READ"] = "0"
 os.environ["STA_FORCE_SQLITE"] = "1"
 os.environ["APP_ENV"] = "development"
 os.environ.pop("API_SECRET_KEY", None)

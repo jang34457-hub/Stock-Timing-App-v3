@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hmac
 import os
+import threading
 from contextlib import asynccontextmanager
 from datetime import date
 from pathlib import Path
@@ -15,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
-from jobs import last_run, run_daily_job
+from jobs import catch_up_if_stale, last_run, run_daily_job
 from market_data import fetch_listing_on, latest_trading_day
 from prices_db import (
     add_watchlist,
@@ -94,9 +95,15 @@ def _check_api_key(provided: str | None) -> JSONResponse | None:
     return None
 
 
+def _env_on(name: str, default: str = "1") -> bool:
+    return os.getenv(name, default).strip().lower() not in {"0", "false", "off"}
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     start_scheduler()
+    if _env_on("CATCHUP_ON_START", "1"):
+        threading.Thread(target=lambda: catch_up_if_stale(wait=False), daemon=True).start()
     yield
     stop_scheduler()
 
@@ -165,6 +172,8 @@ def get_health() -> dict:
 
 @app.get("/top20")
 def get_top20(refresh: bool = Query(default=False), x_user_id: UserId = "local") -> dict:
+    if _env_on("CATCHUP_ON_READ", "1"):
+        catch_up_if_stale(wait=True)
     cached = load_latest_top20()
     if snapshot_is_complete(cached) and not refresh:
         return _enrich_top20(cached, x_user_id)
@@ -317,6 +326,12 @@ def post_sms_test(body: SmsTestIn | None = None, x_user_id: UserId = "local") ->
 @app.get("/jobs/status")
 def get_job_status() -> dict:
     return {**scheduler_status(), "last_run": last_run()}
+
+
+@app.post("/jobs/sync")
+def post_job_sync() -> dict:
+    """앱 실행·로그인 시 호출. 빠진 거래일이 있으면 증분 업데이트한다."""
+    return catch_up_if_stale(wait=True)
 
 
 @app.post("/jobs/run")

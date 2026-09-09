@@ -8,6 +8,9 @@ from pathlib import Path
 
 os.environ["SMS_PROVIDER"] = "test"
 os.environ["APP_ENV"] = "development"
+os.environ["SCHEDULER_ENABLED"] = "0"
+os.environ["CATCHUP_ON_START"] = "0"
+os.environ["CATCHUP_ON_READ"] = "0"
 os.environ.pop("API_SECRET_KEY", None)
 
 from fastapi.testclient import TestClient

@@ -9,6 +9,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 os.environ["SCHEDULER_ENABLED"] = "0"
+os.environ["CATCHUP_ON_START"] = "0"
+os.environ["CATCHUP_ON_READ"] = "0"
 os.environ["APP_ENV"] = "development"
 os.environ.pop("API_SECRET_KEY", None)
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -16,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fastapi.testclient import TestClient
 
 from app import app
-from jobs import run_daily_job
+from jobs import catch_up_if_stale, data_is_stale, run_daily_job
 from top20 import first_trading_day_of_week, is_first_trading_day_of_week
 
 os.environ["APP_ENV"] = "development"
@@ -54,7 +56,10 @@ def _snapshot(day: date) -> dict:
         "selection_date": day.isoformat(),
         "window_start": "2026-06-07",
         "trading_days": 63,
-        "items": [{"stock_code": "005930", "rank": 1}],
+        "items": [
+            {"stock_code": "005930" if i == 0 else f"{i:06d}", "rank": i + 1}
+            for i in range(20)
+        ],
     }
 
 
@@ -134,8 +139,8 @@ def main() -> None:
     assert first["first_trading_day_of_week"] is True
     assert first["top20"]["action"] == "reselected"
     assert select.called and save.called
-    assert first["prices"]["fetched_rows"] == 1
-    assert first["signals"]["sms_sent"] == 1
+    assert first["prices"]["fetched_rows"] == 20
+    assert first["signals"]["sms_sent"] == 20
     _ok("월요일 정상 실행 TOP20 재선정", first["top20"]["action"])
 
     retry, select_retry, save_retry, _ = _run_job(
@@ -173,11 +178,51 @@ def main() -> None:
     fetch.assert_not_called()
     _ok("월요일 선정 완료 → 화요일 재선정 없음", kept["top20"]["action"])
 
+    twenty = [{"stock_code": f"{i:06d}"} for i in range(20)]
+    with (
+        patch(
+            "jobs.load_latest_top20",
+            return_value={"selection_date": "2026-09-07", "items": twenty},
+        ),
+        patch("jobs.first_trading_day_of_week", return_value=date(2026, 9, 7)),
+        patch("jobs.get_last_date", return_value=date(2026, 9, 8)),
+    ):
+        assert data_is_stale(date(2026, 9, 9)) is True
+        assert data_is_stale(date(2026, 9, 8)) is False
+    _ok("시세 날짜가 뒤처지면 stale", "2026-09-08 < 2026-09-09")
+
+    with (
+        patch("jobs.latest_trading_day", return_value=date(2026, 9, 9)),
+        patch("jobs.data_is_stale", return_value=False),
+    ):
+        skipped = catch_up_if_stale()
+    assert skipped["skipped"] == "up_to_date"
+    _ok("이미 최신이면 catch-up 생략", skipped["skipped"])
+
+    with (
+        patch("jobs.latest_trading_day", return_value=date(2026, 9, 9)),
+        patch("jobs.data_is_stale", return_value=True),
+        patch(
+            "jobs._run_daily_job",
+            return_value={"ok": True, "status": "success", "session": "2026-09-09"},
+        ) as delayed,
+    ):
+        caught = catch_up_if_stale()
+    assert delayed.called
+    assert caught["job"] == "catch_up"
+    _ok("로그인 catch-up이 일일 파이프라인 실행", caught["session"])
+
     client = TestClient(app)
     status = client.get("/jobs/status")
     assert status.status_code == 200, status.text
     assert status.json()["timezone"] == "Asia/Seoul"
     _ok("GET /jobs/status", str(status.json()["cron"]))
+
+    with patch("app.catch_up_if_stale", return_value={"ok": True, "skipped": "up_to_date"}):
+        synced = client.post("/jobs/sync")
+    assert synced.status_code == 200, synced.text
+    assert synced.json()["skipped"] == "up_to_date"
+    _ok("POST /jobs/sync", synced.json()["skipped"])
 
     with patch("app.run_daily_job", return_value={"ok": True, "skipped": "dry-run"}):
         posted = client.post("/jobs/run")

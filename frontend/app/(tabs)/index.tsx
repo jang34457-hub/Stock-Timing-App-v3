@@ -20,6 +20,7 @@ export default function HomeScreen() {
     setError(null);
     if (soft) setRefreshing(true);
     try {
+      await api.sync().catch(() => undefined);
       const [top, watch] = await Promise.all([api.top20(), api.watchlist()]);
       setItems(top.items);
       setRecent(top.recent_signals ?? []);

@@ -46,7 +46,7 @@ export async function saveApiConfig(url: string, key?: string): Promise<void> {
 }
 
 function friendlyError(err: unknown, fallback: string): Error {
-  if (err instanceof TypeError) {
+  if (err instanceof TypeError || (err instanceof Error && err.name === 'AbortError')) {
     return new Error(
       `서버에 연결하지 못했습니다 (${apiUrl}). 같은 Wi-Fi인지, 설정에서 PC LAN 주소가 맞는지 확인하세요.`
     );
@@ -55,11 +55,14 @@ function friendlyError(err: unknown, fallback: string): Error {
   return new Error(fallback);
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function request<T>(path: string, init: RequestInit = {}, timeoutMs = 120_000): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   let res: Response;
   try {
     res = await fetch(`${apiUrl}${path}`, {
       ...init,
+      signal: init.signal ?? controller.signal,
       headers: {
         'Content-Type': 'application/json',
         'X-User-Id': USER_ID,
@@ -69,6 +72,8 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     });
   } catch (err) {
     throw friendlyError(err, '요청에 실패했습니다.');
+  } finally {
+    clearTimeout(timer);
   }
   if (!res.ok) {
     throw new Error(await res.text());
@@ -154,7 +159,13 @@ export type Settings = {
 };
 
 export const api = {
-  top20: () => request<Top20Response>('/top20'),
+  sync: () =>
+    request<{ ok: boolean; skipped?: string; session?: string; status?: string }>(
+      '/jobs/sync',
+      { method: 'POST' },
+      180_000
+    ),
+  top20: () => request<Top20Response>('/top20', {}, 180_000),
   stock: (code: string) => request<StockDetail>(`/stocks/${code}`),
   chart: (code: string) =>
     request<

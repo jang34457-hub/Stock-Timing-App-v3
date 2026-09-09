@@ -15,6 +15,9 @@ from unittest.mock import patch
 
 os.environ.setdefault("SMS_PROVIDER", "test")
 os.environ["APP_ENV"] = "development"
+os.environ["SCHEDULER_ENABLED"] = "0"
+os.environ["CATCHUP_ON_START"] = "0"
+os.environ["CATCHUP_ON_READ"] = "0"
 os.environ["SMS_RETRY_MAX"] = "3"
 os.environ["SMS_RETRY_BACKOFF_SEC"] = "0"
 os.environ.pop("API_SECRET_KEY", None)
